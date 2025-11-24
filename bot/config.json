@@ -1,0 +1,37 @@
+{
+  "telegram_bot_token": "",
+  "admin_pin": "",
+  "authorized_user_ids": [],
+  "paths": {
+    "base_dir": "/home/file location",
+    "scripts_dir": "scripts",
+    "logs_dir": "logs", 
+    "downloads_dir": "downloads"
+  },
+  "security": {
+    "session_timeout_minutes": 60
+  },
+  "features": {
+    "offline_queue": true,
+    "enable_camera_tools": true,
+    "enable_file_manager": true,
+    "enable_network_tools": true,
+    "enable_system_control": true,
+    "enable_scheduler": true,
+    "enable_security_tools": true,
+    "enable_workspace_controller": true,
+    "enable_panic_controller": true,
+    "enable_security_monitor": true,
+    "enable_forensics_controller": true,
+    "enable_remote_controller": true,
+    "enable_network_controller": true,
+    "enable_system_advanced": true,
+    "enable_amira": true
+  },
+  "amira": {
+    "openai_api_key": "",
+    "enabled": true,
+    "max_tokens": 500,
+    "learning_enabled": true
+  }
+}
