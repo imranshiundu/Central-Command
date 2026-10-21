@@ -2006,15 +2006,19 @@ def update_phone_status():
     """Update phone connection status."""
     try:
         # Check if phone is connected via ADB
-        success, stdout, stderr = await safe_system_command(['adb', 'devices'])
-        
+        result = subprocess.run(
+            ['adb', 'devices'],
+            capture_output=True, text=True, timeout=15
+        )
+        stdout = result.stdout.strip()
+
         with network_lock:
-            if success and 'device' in stdout:
+            if result.returncode == 0 and 'device' in stdout:
                 phone_state['connected'] = True
                 phone_state['last_sync'] = datetime.now()
             else:
                 phone_state['connected'] = False
-        
+
     except Exception as e:
         logger.error(f"Update phone status error: {e}")
         phone_state['connected'] = False

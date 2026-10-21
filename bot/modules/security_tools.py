@@ -1294,12 +1294,13 @@ def get_current_ip() -> str:
     """Get current external IP address."""
     try:
         if check_tool_available('curl'):
-            success, stdout, stderr = await safe_system_command([
-                'curl', '-s', 'https://api.ipify.org'
-            ])
-            if success:
-                return stdout.strip()
-    except:
+            result = subprocess.run(
+                ['curl', '-s', '--max-time', '10', 'https://api.ipify.org'],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+    except Exception:
         pass
     return "unknown"
 
