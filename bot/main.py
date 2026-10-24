@@ -131,14 +131,14 @@ def require_auth(func):
         with session_lock:
             if user_id in active_sessions:
                 session_time = active_sessions[user_id]
-                timeout_min = config['security']['session_timeout_minutes']
+                timeout_min = config.get('security', {}).get('session_timeout_minutes', 60)
                 if (datetime.now() - session_time).total_seconds() < timeout_min * 60:
                     return await func(update, context)
                 else:
                     del active_sessions[user_id]
 
         # Not authorized - queue command if offline capable
-        if config['features'].get('offline_queue', True):
+        if config.get('features', {}).get('offline_queue', True):
             queue_offline_command(user_id, f"/{func.__name__}", ' '.join(context.args))
             await update.message.reply_text("🔒 Command queued for offline execution.")
         else:
@@ -223,23 +223,29 @@ def load_modules():
         'system_advanced'
     ]
 
-    # Load Amira if API key is available
-    if config.get('openai_api_key') and config['openai_api_key'] != "your_openai_api_key_here":
+    # Load Amira when enabled and an API key is configured
+    amira_cfg = config.get('amira', {})
+    amira_key = amira_cfg.get('openai_api_key', '')
+    if amira_cfg.get('enabled', False) and amira_key and amira_key != "your_openai_api_key_here":
         module_files.append('amira')
         logger.info("Amira AI module will be loaded (API key found)")
     else:
-        logger.warning("Amira AI module skipped (no valid API key)")
+        logger.info("Amira AI module skipped (disabled or no API key)")
 
+    features = config.get('features', {})
     for module_name in module_files:
         try:
-            # Check if module is enabled in config
-            feature_key = f"enable_{module_name.replace('_tools', '').replace('_', '')}"
-            if not config['features'].get(feature_key, True):
+            # Check if module is enabled in config (enable_<module_name>)
+            if not features.get(f"enable_{module_name}", True):
                 logger.info(f"Module {module_name} disabled in config")
                 continue
 
             module = importlib.import_module(f'modules.{module_name}')
             modules[module_name] = module
+
+            # Amira needs explicit initialization with the API key
+            if module_name == 'amira' and hasattr(module, 'initialize'):
+                module.initialize(amira_key)
 
             # Auto-register commands from module
             if hasattr(module, 'register_commands'):
@@ -325,13 +331,13 @@ async def auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     pin_attempt = context.args[0]
-    if pin_attempt == config['admin_pin']:
+    if config.get('admin_pin') and pin_attempt == config['admin_pin']:
         with session_lock:
             active_sessions[user_id] = datetime.now()
         
         welcome_msg = (
             "✅ Authentication successful! Session active for "
-            f"{config['security']['session_timeout_minutes']} minutes.\n\n"
+            f"{config.get('security', {}).get('session_timeout_minutes', 60)} minutes.\n\n"
             "🆕 **Enhanced Features:**\n"
             "• Emergency lockdown system\n"
             "• 24/7 security monitoring\n" 
@@ -555,7 +561,7 @@ async def health_check(context: ContextTypes.DEFAULT_TYPE):
             now = datetime.now()
             expired_sessions = [
                 user_id for user_id, session_time in active_sessions.items()
-                if (now - session_time).total_seconds() > config['security']['session_timeout_minutes'] * 60
+                if (now - session_time).total_seconds() > config.get('security', {}).get('session_timeout_minutes', 60) * 60
             ]
             for user_id in expired_sessions:
                 del active_sessions[user_id]
@@ -601,7 +607,12 @@ def main():
     load_modules()
 
     # Create application
-    application = Application.builder().token(config['telegram_bot_token']).build()
+    token = config.get('telegram_bot_token', '')
+    if not token or 'YOUR_BOT_TOKEN' in token:
+        logger.error('telegram_bot_token missing from config.json - cannot start')
+        print('\u274c ERROR: Set telegram_bot_token in bot/config.json first.')
+        sys.exit(1)
+    application = Application.builder().token(token).build()
 
     # Add callback handler for workspace controller inline buttons
     try:
