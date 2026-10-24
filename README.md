@@ -22,7 +22,7 @@ PIN, and control the host through chat:
 - **Scheduler:** `/schedule <time> <cmd>`, `/tasks`, `/cancel`
 - **Workspace:** `/workspace`, `/launch <app>`, `/listapps`,
   `/openfile <file>`, `/playmusic`, `/playvideo`
-- **Forensics:** `/browser_history`, `/recover_files`, `/metadata`,
+- **Forensics:** `/browser_history`, `/recover_files`, `/metadata_extract`,
   `/timeline_analysis`, `/clean_evidence`
 - **Remote:** `/remote_shell <cmd>`, `/screen_record`, `/webcam_control`
 - **System advanced:** `/encrypt_file`, `/decrypt_file`,
@@ -97,12 +97,11 @@ Manage it with:
 ```
 Central-Command/
 ├── README.md
-├── config.example.json   # copy to bot/config.json and fill in secrets
 ├── requirements.txt      # minimal deps (telegram, psutil, requests + job-queue)
 ├── requirements-optional.txt  # opencv / openai / cryptography for extra features
 ├── smoke_test.py         # import/registration check (no token needed)
 ├── bot/
-│   ├── main.py           # bot dispatcher: auth, module loader, health job
+│   ├── config.example.json   # copy to bot/config.json and fill in secrets
 │   ├── config.json       # YOUR secrets (gitignored, create from example)
 │   ├── manage_bot.sh     # start/stop/status/diagnostics/logs
 │   ├── autostart/

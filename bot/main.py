@@ -5,13 +5,11 @@ SOLVED: Multiple instance conflict & Message length issues
 """
 
 import logging
-import json
 import importlib
 import os
 import sys
 import asyncio
 import subprocess
-import time
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, JobQueue, MessageHandler, filters, CallbackQueryHandler
@@ -29,7 +27,6 @@ try:
 except ImportError:  # direct script execution
     from shared import config, BASE_DIR, DOWNLOADS_DIR, LOGS_DIR, ensure_dir
 
-SCRIPTS_DIR = os.path.join(BASE_DIR, config.get('paths', {}).get('scripts_dir', 'scripts'))
 DB_PATH = os.path.join(BASE_DIR, 'command_queue.db')
 PID_FILE = os.path.join(BASE_DIR, 'bot.pid')
 
@@ -118,8 +115,9 @@ def is_authorized(user_id):
     """Check if user is in authorized list."""
     return user_id in config.get('authorized_user_ids', [])
 
-def require_auth(func):
+def require_auth(func, command_name=None):
     """Decorator to check user authorization."""
+    name = command_name or func.__name__
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
 
@@ -139,7 +137,7 @@ def require_auth(func):
 
         # Not authorized - queue command if offline capable
         if config.get('features', {}).get('offline_queue', True):
-            queue_offline_command(user_id, f"/{func.__name__}", ' '.join(context.args))
+            queue_offline_command(user_id, f"/{name}", ' '.join(context.args))
             await update.message.reply_text("🔒 Command queued for offline execution.")
         else:
             await update.message.reply_text("❌ Unauthorized. Use /auth <PIN> to gain access.")
@@ -186,7 +184,12 @@ def queue_offline_command(user_id, command, args):
         return False
 
 async def process_offline_queue():
-    """Process any queued commands from offline period."""
+    """Report any queued commands from the offline period.
+
+    Queued commands are logged for admin review. They are intentionally
+    NOT auto-executed on reconnect — running arbitrary queued commands
+    without an operator present would be a security risk.
+    """
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -196,17 +199,12 @@ async def process_offline_queue():
         queued_commands = cursor.fetchall()
 
         for cmd_id, user_id, command, args in queued_commands:
-            logger.info(f"Executing queued command: {command} {args}")
-            cursor.execute(
-                "UPDATE command_queue SET executed = TRUE WHERE id = ?",
-                (cmd_id,)
-            )
+            logger.info(f"Offline queue pending (id={cmd_id}, user={user_id}): {command} {args}")
 
-        conn.commit()
         conn.close()
 
         if queued_commands:
-            logger.info(f"Processed {len(queued_commands)} queued commands")
+            logger.info(f"{len(queued_commands)} offline command(s) awaiting admin review")
 
     except Exception as e:
         logger.error(f"Error processing offline queue: {e}")
@@ -364,9 +362,9 @@ async def auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"Failed PIN attempt from user {user_id}")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show available commands with categorized pagination."""
+    """Show available commands, grouped by module (always truthful)."""
     user_id = update.effective_user.id
-    
+
     # Check authorization first
     if not is_authorized(user_id):
         with session_lock:
@@ -374,37 +372,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Unauthorized. Use /auth <PIN> first.")
                 return
 
-    # Define command categories with emojis
-    categories = {
-        "🚨 EMERGENCY & SECURITY": [
-            'panic', 'redalert', 'lockdown', 'evidence', 'killswitch',
-            'antitheft', 'geo', 'alert', 'wipe'
-        ],
-        "🔍 INVESTIGATION & FORENSICS": [
-            'browser_history', 'recover_files', 'system_scan', 'hash_check',
-            'metadata', 'network_scan', 'process_analysis'
-        ],
-        "🌐 REMOTE & NETWORK": [
-            'remote_desktop', 'file_transfer', 'web_scrape', 'download_manager',
-            'ip', 'wifi', 'speedtest', 'ping', 'vpn', 'netinfo', 'ports'
-        ],
-        "⚙️ SYSTEM & CONTROL": [
-            'process_monitor', 'hardware_info', 'service_control', 'power_management',
-            'lock', 'unlock', 'shutdown', 'reboot', 'sleep', 'msg', 'speak'
-        ],
-        "📷 CAMERA & MEDIA": [
-            'photo', 'record', 'surveillance', 'screenshot', 'camerastatus'
-        ],
-        "📁 FILE MANAGEMENT": [
-            'download', 'listfiles', 'sendfile', 'deletefile', 'diskusage', 'cleanup'
-        ],
-        "🤖 AI ASSISTANT": [
-            'amira', 'amira_help', 'amira_status', 'amira_clear'
-        ],
-        "⏰ SCHEDULER & TASKS": [
-            'schedule', 'tasks', 'cancel'
-        ]
-    }
+    # Group registered commands by their module
+    by_module = {}
+    for name, info in command_registry.items():
+        mod = info.get('module', 'main').split('.')[-1]
+        by_module.setdefault(mod, []).append((name, info.get('description', 'Command available')))
 
     # Get page number from args (default to 1)
     page = 1
@@ -414,43 +386,40 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             page = 1
 
-    # Calculate pages
-    category_names = list(categories.keys())
-    total_pages = len(category_names)
+    module_names = sorted(by_module.keys())
+    total_pages = len(module_names)
     page = max(1, min(page, total_pages))
-    
-    current_category = category_names[page - 1]
-    commands_in_category = categories[current_category]
 
-    # Build help message for current category
-    help_text = f"🤖 **C3NTR@L COMM@ND V1.3 - {current_category}**\n\n"
-    
-    for cmd_name in commands_in_category:
-        if cmd_name in command_registry:
-            cmd_info = command_registry[cmd_name]
-            help_text += f"• `/{cmd_name}` - {cmd_info['description']}\n"
-        else:
-            help_text += f"• `/{cmd_name}` - Command available\n"
+    current_module = module_names[page - 1]
+    commands_in_module = sorted(by_module[current_module])
+
+    # Build help message for current module
+    pretty = current_module.replace('_', ' ').title()
+    help_text = f"🤖 **C3NTR@L COMM@ND V1.3 - {pretty}**\n\n"
+
+    for cmd_name, desc in commands_in_module:
+        help_text += f"• `/{cmd_name}` - {desc}\n"
 
     # Add pagination info
     help_text += f"\n📄 Page {page} of {total_pages}"
-    help_text += f"\n🔧 Use `/help {page+1}` for next category" if page < total_pages else ""
-    help_text += f"\n📋 Use `/help 1` for first category"
+    if page < total_pages:
+        help_text += f"\n🔧 Use `/help {page+1}` for next module"
+    help_text += f"\n📋 Use `/help 1` for first module"
 
     # Add quick navigation tips
     if page == 1:
         help_text += "\n\n💡 **Quick Start:**"
-        help_text += "\n• Emergency: `/help 1`"
-        help_text += "\n• Investigation: `/help 2`" 
-        help_text += "\n• Remote Access: `/help 3`"
-        help_text += "\n• Full list: Use /commands for all commands"
+        help_text += "\n• `/start` - Bot status"
+        help_text += "\n• `/auth <PIN>` - Sign in temporarily"
+        help_text += "\n• `/status` - System health"
+        help_text += "\n• `/commands` - Full list in separate messages"
 
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def commands_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send all commands in separate messages to avoid length limits."""
     user_id = update.effective_user.id
-    
+
     # Check authorization
     if not is_authorized(user_id):
         with session_lock:
@@ -460,38 +429,27 @@ async def commands_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Send header message
     await update.message.reply_text(
-        "📋 **All Available Commands**\n\n"
-        "Commands will be sent in categories to avoid message limits..."
+        f"📋 **All Available Commands** ({len(command_registry)} total)\n\n"
+        "Commands are grouped by module in separate messages..."
     )
 
-    # Send commands by category in separate messages
-    categories = {
-        "🚨 Emergency & Security": ['panic', 'redalert', 'lockdown', 'evidence', 'killswitch', 'antitheft', 'geo', 'alert', 'wipe'],
-        "🔍 Investigation": ['browser_history', 'recover_files', 'system_scan', 'hash_check', 'metadata', 'network_scan', 'process_analysis'],
-        "🌐 Remote & Network": ['remote_desktop', 'file_transfer', 'web_scrape', 'download_manager', 'ip', 'wifi', 'speedtest', 'ping', 'vpn', 'netinfo', 'ports'],
-        "⚙️ System Control": ['process_monitor', 'hardware_info', 'service_control', 'power_management', 'lock', 'unlock', 'shutdown', 'reboot', 'sleep', 'msg', 'speak'],
-        "📷 Camera & Media": ['photo', 'record', 'surveillance', 'screenshot', 'camerastatus'],
-        "📁 File Management": ['download', 'listfiles', 'sendfile', 'deletefile', 'diskusage', 'cleanup'],
-        "🤖 AI Assistant": ['amira', 'amira_help', 'amira_status', 'amira_clear'],
-        "⏰ Scheduler": ['schedule', 'tasks', 'cancel']
-    }
+    # Group by module and send each module separately
+    by_module = {}
+    for name, info in command_registry.items():
+        mod = info.get('module', 'main').split('.')[-1]
+        by_module.setdefault(mod, []).append((name, info.get('description', 'Command available')))
 
-    for category_name, command_list in categories.items():
-        category_text = f"**{category_name}**\n"
-        
-        for cmd_name in command_list:
-            if cmd_name in command_registry:
-                cmd_info = command_registry[cmd_name]
-                category_text += f"• `/{cmd_name}` - {cmd_info['description']}\n"
-        
-        if len(category_text) > 100:  # Only send if there are commands
-            await update.message.reply_text(category_text, parse_mode='Markdown')
-            await asyncio.sleep(0.5)  # Prevent rate limiting
+    for mod in sorted(by_module.keys()):
+        pretty = mod.replace('_', ' ').title()
+        category_text = f"**{pretty}**\n"
+        for cmd_name, desc in sorted(by_module[mod]):
+            category_text += f"• `/{cmd_name}` - {desc}\n"
+        await update.message.reply_text(category_text, parse_mode='Markdown')
+        await asyncio.sleep(0.5)  # Prevent rate limiting
 
     await update.message.reply_text(
         "✅ All commands listed above!\n\n"
         "💡 **Tip:** Use `/help <page>` for categorized view\n"
-        "🔍 **Search:** Use `/amira find command about files` for AI help"
     )
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -513,15 +471,8 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"*Loaded Modules:* {len(modules)}\n"
             f"*Commands Available:* {len(command_registry)}\n\n"
             
-            "*🆕 Fixed Issues:*\n"
-            "• ✅ Multiple instance conflict\n"
-            "• ✅ Message length limits\n"
-            "• ✅ Amira AI integration\n"
-            "• ✅ Auto-restart loop\n\n"
-            
-            "*Security Status:* 🟢 OPERATIONAL\n"
-            "*AI Assistant:* 🟢 READY\n"
-            "*All Systems:* 🟢 NOMINAL"
+            f"*Security:* {'🟢 PIN set' if config.get('admin_pin') else '🟡 No admin PIN'}\n"
+            f"*AI Assistant:* {'🟢 Amira loaded' if 'amira' in modules else '🔴 Amira offline'}\n"
         )
 
         await update.message.reply_text(status_msg, parse_mode='Markdown')
@@ -533,14 +484,15 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle unknown commands."""
+    total_modules = len({info.get('module', 'main').split('.')[-1] for info in command_registry.values()})
     await update.message.reply_text(
         "❌ Unknown command. Use `/help` to see available commands.\n\n"
-        "💡 **Quick Categories:**\n"
-        "• Emergency: `/help 1`\n"
-        "• Investigation: `/help 2`\n" 
-        "• Remote: `/help 3`\n"
-        "• System: `/help 4`\n\n"
-        "🔍 Or ask Amira: `/amira how do I check system status?`"
+        f"💡 **Quick Start:**\n"
+        f"• `/start` - Bot status\n"
+        f"• `/auth <PIN>` - Sign in temporarily\n"
+        f"• `/status` - System health\n"
+        f"• `/help 1` - Module list (page 1 of {total_modules})\n"
+        f"• `/commands` - Full command list"
     )
 
 # --- Error Handling ---
@@ -671,9 +623,12 @@ def main():
     print("  ⚙️ System Advanced     - Deep System Control")
     print(f"  🤖 Amira AI           - {'🟢 ACTIVE' if 'amira' in modules else '🔴 OFFLINE'}")
 
+    graceful_stop = False
     try:
         application.run_polling()
+        graceful_stop = True
     except KeyboardInterrupt:
+        graceful_stop = True
         logger.info("Bot stopped by user")
         print("\n🛑 C3NTR@L COMM@ND V1.3 stopped gracefully.")
     except Exception as e:
@@ -681,7 +636,7 @@ def main():
         traceback.print_exc()
     finally:
         cleanup_pid_file()
-        sys.exit(1 if application else 0)
+        sys.exit(0 if graceful_stop else 1)
 
 if __name__ == '__main__':
     main()

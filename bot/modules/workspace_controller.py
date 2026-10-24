@@ -20,9 +20,9 @@ try:
 except ImportError:  # direct script execution
     from shared import BASE_DIR, DOWNLOADS_DIR
 
-MUSIC_DIR = "/home/imran/Music"
-VIDEO_DIR = "/home/imran/Videos"
-DOCUMENTS_DIR = "/home/imran/Documents"
+MUSIC_DIR = os.path.expanduser('~/Music')
+VIDEO_DIR = os.path.expanduser('~/Videos')
+DOCUMENTS_DIR = os.path.expanduser('~/Documents')
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +434,7 @@ async def open_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ **Usage:** `/openfile <file_path>`\n\n"
             "💡 **Examples:**\n"
-            "• `/openfile /home/imran/Music/song.mp3`\n"
+            "• `/openfile ~/Music/song.mp3`\n"
             "• `/openfile document.pdf`\n"
             "• Use `/listfiles` to browse files first",
             parse_mode='Markdown'
@@ -550,7 +550,7 @@ async def find_music_files(search_query):
     music_extensions = ['*.mp3', '*.wav', '*.flac', '*.m4a', '*.ogg', '*.aac']
     music_files = []
     
-    search_dirs = [MUSIC_DIR, os.path.expanduser('~/Music'), '/home/imran/Music']
+    search_dirs = [MUSIC_DIR]
     
     for search_dir in search_dirs:
         if os.path.exists(search_dir):
