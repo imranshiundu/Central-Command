@@ -19,8 +19,6 @@ import shutil
 import hashlib
 import zipfile
 import tarfile
-import gnupg
-import cryptography
 from datetime import datetime, timedelta
 from pathlib import Path
 from telegram import Update
@@ -28,10 +26,16 @@ from telegram.ext import ContextTypes
 import socket
 import re
 import tempfile
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
+
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    CRYPTOGRAPHY_AVAILABLE = False
+    logging.warning("cryptography not available; encryption features disabled")
 
 try:
     from .shared import BASE_DIR
@@ -786,6 +790,9 @@ async def apply_performance_profile(mode: str) -> bool:
 async def encrypt_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Encrypt file with password."""
     try:
+        if not CRYPTOGRAPHY_AVAILABLE:
+            await update.message.reply_text("❌ Encryption unavailable: install the `cryptography` package.")
+            return
         if len(context.args) < 2:
             await update.message.reply_text(
                 "❌ **Usage:** `/encrypt_file [file_path] [password]`\n\n"
@@ -881,6 +888,9 @@ async def encrypt_file(file_path: str, password: str) -> str:
 async def decrypt_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Decrypt file with password."""
     try:
+        if not CRYPTOGRAPHY_AVAILABLE:
+            await update.message.reply_text("\u274c Decryption unavailable: install the `cryptography` package.")
+            return
         if len(context.args) < 2:
             await update.message.reply_text(
                 "❌ **Usage:** `/decrypt_file [encrypted_file] [password]`\n\n"

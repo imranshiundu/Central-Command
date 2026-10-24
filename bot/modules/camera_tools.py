@@ -14,7 +14,6 @@ import subprocess
 import json
 import psutil
 from functools import wraps
-import cv2
 import time
 
 # Try to import optional dependencies

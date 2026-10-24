@@ -7,7 +7,6 @@ SOLVED: API integration, error handling, and performance
 import logging
 import json
 import asyncio
-import openai
 import sqlite3
 from datetime import datetime
 from telegram import Update
@@ -20,6 +19,14 @@ import psutil
 import platform
 import socket
 import re
+
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    openai = None
+    OPENAI_AVAILABLE = False
+    logging.warning("openai package not installed; Amira runs in offline mode")
 
 logger = logging.getLogger(__name__)
 
@@ -43,23 +50,20 @@ class AmiraAI:
         self.api_key = api_key
         self.client = None
         self.is_online = False
-        
-        # FIXED: Better API key validation and client initialization
-        if api_key and api_key.strip() and api_key != "your_openai_api_key_here":
+
+        # Create the client if we have a key; the first real request validates it.
+        # (The old code made a blocking network call in __init__, stalling startup.)
+        if OPENAI_AVAILABLE and api_key and api_key.strip() and api_key != "your_openai_api_key_here":
             try:
                 self.client = openai.OpenAI(api_key=api_key.strip())
-                # Test the API key with a simple request
-                test_response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Say 'API test successful'"}],
-                    max_tokens=10
-                )
                 self.is_online = True
-                logger.info("✅ Amira AI initialized successfully with OpenAI API")
+                logger.info("✅ Amira AI initialized with OpenAI API")
             except Exception as e:
-                logger.error(f"❌ Amira AI API initialization failed: {e}")
+                logger.error(f"❌ Amira AI client initialization failed: {e}")
                 self.client = None
                 self.is_online = False
+        elif not OPENAI_AVAILABLE:
+            logger.warning("🔴 Amira AI offline: openai package not installed")
         else:
             logger.warning("🔴 Amira AI running in offline mode - no valid API key provided")
             
@@ -196,18 +200,20 @@ Remember: You are part of a security-focused command and control system. Always 
             except asyncio.TimeoutError:
                 logger.warning(f"Amira API call timed out for user {user_id}")
                 ai_response = "⏰ I'm experiencing high latency right now. Please try again in a moment or ask a simpler question."
-            except openai.RateLimitError:
-                logger.error("OpenAI rate limit exceeded")
-                ai_response = "🚫 I've reached my rate limit. Please wait a moment before trying again."
-            except openai.APIConnectionError:
-                logger.error("OpenAI API connection error")
-                ai_response = "🔌 Connection issue with AI service. Please check your internet connection."
-            except openai.AuthenticationError:
-                logger.error("OpenAI authentication failed")
-                ai_response = "🔑 API authentication failed. Please check your OpenAI API key in config.json"
             except Exception as api_error:
-                logger.error(f"OpenAI API error: {api_error}")
-                ai_response = "❌ I encountered an API error. Please try again later."
+                err_type = type(api_error).__name__
+                if 'RateLimit' in err_type:
+                    logger.error("OpenAI rate limit exceeded")
+                    ai_response = "🚫 I've reached my rate limit. Please wait a moment before trying again."
+                elif 'Connection' in err_type or 'APIConnectionError' in err_type:
+                    logger.error("OpenAI API connection error")
+                    ai_response = "🔌 Connection issue with AI service. Please check your internet connection."
+                elif 'Authentication' in err_type or 'AuthenticationError' in err_type:
+                    logger.error("OpenAI authentication failed")
+                    ai_response = "🔑 API authentication failed. Please check your OpenAI API key in config.json"
+                else:
+                    logger.error(f"OpenAI API error: {api_error}")
+                    ai_response = "❌ I encountered an API error. Please try again later."
             
             # Update conversation history
             self._update_conversation_history(user_id, message, ai_response)
