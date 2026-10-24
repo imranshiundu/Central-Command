@@ -14,9 +14,10 @@ echo "║         Advanced Bot Management             ║"
 echo "╚══════════════════════════════════════════════╝"
 echo -e "\033[0m"
 
-# Configuration
-BOT_DIR="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/bot"
-AUTOSTART_DIR="$BOT_DIR/autostart"
+# Configuration (derived from this script's location - works from any clone path)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+AUTOSTART_DIR="$SCRIPT_DIR"
 SERVICE_NAME="c3ntral-command.service"
 SERVICE_FILE="$AUTOSTART_DIR/$SERVICE_NAME"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
@@ -47,17 +48,14 @@ log_info() {
     echo -e "${BLUE}[SETUP INFO]${NC} $1"
 }
 
-# Check if running as correct user
+# Check we are not running as root (user services need a real user)
 check_user() {
-    local expected_user="imran"
-    local current_user=$(whoami)
-    
-    if [[ "$current_user" != "$expected_user" ]]; then
-        log_error "This script must be run as user '$expected_user', not '$current_user'"
-        log_error "Please run: sudo -u $expected_user $0"
+    if [[ "$(whoami)" == "root" ]]; then
+        log_error "Do not run this as root - systemd user services belong to a login user."
+        log_error "Run as your normal user: $0"
         exit 1
     fi
-    log "Running as correct user: $current_user"
+    log "Running as user: $(whoami)"
 }
 
 # Check if bot directory exists
@@ -84,10 +82,9 @@ check_start_script() {
         log_error "This is required for auto-start to work"
         log_info "Creating basic start_bot.sh..."
         
-        cat > "$AUTOSTART_DIR/start_bot.sh" << 'EOF'
+        cat > "$AUTOSTART_DIR/start_bot.sh" << EOF
 #!/bin/bash
 # Basic startup script for C3NTR@L COMM@ND
-BOT_DIR="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/bot"
 cd "$BOT_DIR"
 python3 main.py
 EOF
@@ -100,9 +97,15 @@ EOF
     fi
 }
 
-# Check if virtual environment exists
+# Check if virtual environment exists (repo root or bot dir)
 check_virtual_environment() {
-    local venv_path="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/.venv"
+    local venv_path=""
+    for candidate in "$BOT_DIR/../.venv" "$BOT_DIR/.venv"; do
+        if [[ -f "$candidate/bin/python3" ]]; then
+            venv_path="$(cd "$candidate" && pwd)"
+            break
+        fi
+    done
     
     if [[ ! -d "$venv_path" ]]; then
         log_warning "Virtual environment not found at: $venv_path"
@@ -163,30 +166,30 @@ make_scripts_executable() {
     done
 }
 
-# 🔧 CRITICAL FIX: Create proper systemd service file
+# Create the systemd user service (paths derived from the actual install)
 create_systemd_service() {
     log "Creating systemd service file..."
-    
-    # Use absolute path to Python executable
-    local python_cmd="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/.venv/bin/python3"
-    if [[ ! -f "$python_cmd" ]]; then
-        python_cmd="python3"
-        log_warning "Using system Python instead of virtual environment"
-    fi
+
+    # Prefer a venv python, fall back to system python3
+    local python_cmd="python3"
+    for candidate in "$BOT_DIR/../.venv/bin/python3" "$BOT_DIR/.venv/bin/python3"; do
+        if [[ -x "$candidate" ]]; then
+            python_cmd="$(cd "$(dirname "$candidate")" && pwd)/python3"
+            break
+        fi
+    done
+    [[ "$python_cmd" == "python3" ]] && log_warning "Using system Python (no venv found)"
     
     cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=C3NTR@L COMM@ND V1.1 Bot Service
-Description=Advanced Telegram bot with monitoring and security features
-After=network.target
-Wants=network.target
+Description=C3NTR@L COMM@ND - Telegram remote-control bot
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=500
 StartLimitBurst=5
 
 [Service]
 Type=simple
-User=imran
-Group=imran
 WorkingDirectory=$BOT_DIR
 ExecStart=$python_cmd $BOT_DIR/main.py
 ExecStop=/bin/kill -TERM \$MAINPID
@@ -195,18 +198,14 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# 🔧 CRITICAL: Proper environment for GUI and user session
+# GUI / session environment for camera & screenshot features
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/imran/.Xauthority
+Environment=XAUTHORITY=$HOME/.Xauthority
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
-Environment=HOME=/home/imran
-Environment=USER=imran
+Environment=HOME=$HOME
+Environment=USER=$(whoami)
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$HOME/.local/bin
 
-# 🔧 FIX: Add PATH to include user binaries
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/imran/.local/bin
-
-# Working directory and umask
-WorkingDirectory=$BOT_DIR
 UMask=0022
 
 # Security settings
@@ -290,11 +289,13 @@ create_desktop_autostart() {
     log "Creating desktop autostart (backup method)..."
     
     local desktop_file="$HOME/.config/autostart/c3ntral-command.desktop"
-    local python_cmd="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/.venv/bin/python3"
-    
-    if [[ ! -f "$python_cmd" ]]; then
-        python_cmd="python3"
-    fi
+    local python_cmd="python3"
+    for candidate in "$BOT_DIR/../.venv/bin/python3" "$BOT_DIR/.venv/bin/python3"; do
+        if [[ -x "$candidate" ]]; then
+            python_cmd="$candidate"
+            break
+        fi
+    done
     
     cat > "$desktop_file" << EOF
 [Desktop Entry]
@@ -318,11 +319,14 @@ EOF
 setup_crontab() {
     log "Setting up crontab fallback..."
     
-    local python_cmd="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/.venv/bin/python3"
-    if [[ ! -f "$python_cmd" ]]; then
-        python_cmd="python3"
-    fi
-    
+    local python_cmd="python3"
+    for candidate in "$BOT_DIR/../.venv/bin/python3" "$BOT_DIR/.venv/bin/python3"; do
+        if [[ -x "$candidate" ]]; then
+            python_cmd="$candidate"
+            break
+        fi
+    done
+
     local crontab_entry="@reboot sleep 45 && cd $BOT_DIR && $python_cmd main.py > $BOT_DIR/logs/cron.log 2>&1"
     
     # Check if crontab entry already exists
@@ -351,172 +355,6 @@ test_service() {
     else
         log_warning "No bot process found"
     fi
-}
-
-# Create management script
-create_management_script() {
-    log "Creating management helper script..."
-    
-    local manage_script="$BOT_DIR/manage_bot.sh"
-    
-    cat > "$manage_script" << 'EOF'
-#!/bin/bash
-
-# C3NTR@L COMM@ND - Bot Management Helper
-# Easy-to-use management interface
-
-BOT_DIR="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/bot"
-SERVICE_NAME="c3ntral-command.service"
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-show_header() {
-    echo -e "${CYAN}"
-    echo "╔══════════════════════════════════════════════╗"
-    echo "║           C3NTR@L COMM@ND V1.1              ║"
-    echo "║           Management Console                ║"
-    echo "╚══════════════════════════════════════════════╝"
-    echo -e "${NC}"
-}
-
-show_status() {
-    echo -e "\n${YELLOW}=== System Status ===${NC}"
-    
-    # Systemd status
-    if systemctl --user is-active "$SERVICE_NAME" >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ Systemd service: ACTIVE${NC}"
-    elif systemctl --user is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
-        echo -e "${YELLOW}⚠ Systemd service: ENABLED but INACTIVE${NC}"
-    else
-        echo -e "${RED}✗ Systemd service: DISABLED or NOT FOUND${NC}"
-    fi
-    
-    # Process status
-    if pgrep -f "python.*main.py" >/dev/null; then
-        echo -e "${GREEN}✓ Bot process: RUNNING${NC}"
-        echo -e "  Processes:"
-        ps aux | grep -v grep | grep "python.*main.py" | while read line; do
-            echo -e "  ${BLUE}  $line${NC}"
-        done
-    else
-        echo -e "${RED}✗ Bot process: NOT RUNNING${NC}"
-    fi
-    
-    # Network check
-    if curl -s --connect-timeout 5 https://www.google.com >/dev/null; then
-        echo -e "${GREEN}✓ Internet: CONNECTED${NC}"
-    else
-        echo -e "${YELLOW}⚠ Internet: DISCONNECTED${NC}"
-    fi
-    
-    # Auto-start methods
-    echo -e "\n${YELLOW}=== Auto-Start Methods ===${NC}"
-    if systemctl --user is-enabled "$SERVICE_NAME" >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ Systemd service: ENABLED${NC}"
-    else
-        echo -e "${RED}✗ Systemd service: DISABLED${NC}"
-    fi
-    
-    if [[ -f "$HOME/.config/autostart/c3ntral-command.desktop" ]]; then
-        echo -e "${GREEN}✓ Desktop autostart: CONFIGURED${NC}"
-    else
-        echo -e "${RED}✗ Desktop autostart: NOT CONFIGURED${NC}"
-    fi
-    
-    if crontab -l 2>/dev/null | grep -q "main.py"; then
-        echo -e "${GREEN}✓ Crontab: CONFIGURED${NC}"
-    else
-        echo -e "${RED}✗ Crontab: NOT CONFIGURED${NC}"
-    fi
-}
-
-case "${1:-}" in
-    start)
-        echo -e "${GREEN}Starting bot via systemd...${NC}"
-        systemctl --user start "$SERVICE_NAME"
-        ;;
-    stop)
-        echo -e "${YELLOW}Stopping bot...${NC}"
-        systemctl --user stop "$SERVICE_NAME"
-        # Also kill any stray processes
-        pkill -f "python.*main.py" 2>/dev/null || true
-        ;;
-    restart)
-        echo -e "${BLUE}Restarting bot...${NC}"
-        systemctl --user restart "$SERVICE_NAME"
-        ;;
-    status)
-        show_header
-        show_status
-        echo -e "\n${YELLOW}=== Service Details ===${NC}"
-        systemctl --user status "$SERVICE_NAME" --no-pager || true
-        ;;
-    logs)
-        echo -e "${CYAN}Showing service logs (Ctrl+C to exit)...${NC}"
-        journalctl --user -u "$SERVICE_NAME" -f
-        ;;
-    enable)
-        echo -e "${GREEN}Enabling auto-start...${NC}"
-        systemctl --user enable "$SERVICE_NAME"
-        ;;
-    disable)
-        echo -e "${YELLOW}Disabling auto-start...${NC}"
-        systemctl --user disable "$SERVICE_NAME"
-        ;;
-    service-start)
-        echo -e "${GREEN}Starting systemd service...${NC}"
-        systemctl --user start "$SERVICE_NAME"
-        ;;
-    service-stop)
-        echo -e "${YELLOW}Stopping systemd service...${NC}"
-        systemctl --user stop "$SERVICE_NAME"
-        ;;
-    service-status)
-        systemctl --user status "$SERVICE_NAME"
-        ;;
-    service-restart)
-        echo -e "${BLUE}Restarting systemd service...${NC}"
-        systemctl --user restart "$SERVICE_NAME"
-        ;;
-    service-logs)
-        echo -e "${CYAN}Showing service logs (Ctrl+C to exit)...${NC}"
-        journalctl --user -u "$SERVICE_NAME" -f
-        ;;
-    *)
-        show_header
-        show_status
-        echo -e "\n${GREEN}Available Commands:${NC}"
-        echo "  start           - Start bot via systemd"
-        echo "  stop            - Stop bot"
-        echo "  restart         - Restart bot"
-        echo "  status          - Show detailed status"
-        echo "  logs            - Show service logs"
-        echo "  enable          - Enable auto-start"
-        echo "  disable         - Disable auto-start"
-        echo ""
-        echo "${YELLOW}Systemd Service Commands:${NC}"
-        echo "  service-start   - Start systemd service"
-        echo "  service-stop    - Stop systemd service"
-        echo "  service-status  - Show service status"
-        echo "  service-restart - Restart systemd service"
-        echo "  service-logs    - Show service logs"
-        echo ""
-        echo "${CYAN}Examples:${NC}"
-        echo "  $0 start        # Start bot"
-        echo "  $0 status       # Check status"
-        echo "  $0 logs         # View logs"
-        ;;
-esac
-EOF
-
-    chmod +x "$manage_script"
-    log "Management script created: $manage_script"
 }
 
 # Create backup of existing configuration
@@ -618,7 +456,6 @@ main() {
     install_systemd_service
     create_desktop_autostart
     setup_crontab
-    create_management_script
     test_service
     
     show_setup_summary

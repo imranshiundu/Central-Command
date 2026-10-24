@@ -4,9 +4,17 @@
 # ENHANCED VERSION with advanced monitoring and features
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOT_DIR="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/bot"  # ✅ FIXED PATH
-VENV_PYTHON="/home/imran/snap/C3NTR@L-COMM@ND-V1.1/.venv/bin/python3"  # ✅ FIXED VENV PATH
+BOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Prefer a venv next to the repo root, else the bot dir, else system python
+if [[ -x "$BOT_DIR/../../.venv/bin/python3" ]]; then
+    VENV_PYTHON="$BOT_DIR/../../.venv/bin/python3"
+elif [[ -x "$BOT_DIR/.venv/bin/python3" ]]; then
+    VENV_PYTHON="$BOT_DIR/.venv/bin/python3"
+else
+    VENV_PYTHON=""
+fi
 LOG_DIR="$BOT_DIR/logs"
+SERVICE_NAME="c3ntral-command.service"
 CONFIG_FILE="$BOT_DIR/config.json"
 PID_FILE="$BOT_DIR/bot.pid"
 STATUS_FILE="$BOT_DIR/bot.status"
@@ -273,8 +281,9 @@ is_bot_running() {
     return 1
 }
 
-# 🔧 ENHANCED: Bot startup with better error handling
+# 🔧 ENHANCED: Bot startup with better error handling ($1 = retry attempt, internal)
 start_bot() {
+    local attempt="${1:-0}"
     if ! acquire_lock; then
         log_error "Another instance is already starting the bot"
         return 1
@@ -295,8 +304,8 @@ start_bot() {
         return 1
     }
     
-    # 🔧 FIXED: Use absolute path to virtual environment Python
-    if [[ -f "$VENV_PYTHON" ]]; then
+    # 🔧 FIXED: Use virtual environment python if available
+    if [[ -n "$VENV_PYTHON" ]]; then
         log_info "Using virtual environment: $VENV_PYTHON"
         nohup "$VENV_PYTHON" main.py >> "$LOG_DIR/bot_console.log" 2>&1 &
     else
@@ -336,12 +345,18 @@ start_bot() {
         
         rm -f "$PID_FILE"
         release_lock
-        
-        # 🔧 NEW: Auto-retry once
-        log_info "Attempting auto-retry..."
-        sleep 2
-        start_bot
-        return $?
+
+        # 🔧 FIXED: bounded retry (was unbounded recursion)
+        if (( attempt < 2 )); then
+            log_info "Attempting auto-retry ($((attempt + 1))/2)..."
+            sleep 2
+            start_bot "$((attempt + 1))"
+            return $?
+        fi
+
+        log_error "❌ Bot failed to start after 3 attempts - giving up"
+        send_dual_notification "🚨 Bot Failed to Start" "Bot could not start after 3 attempts. Check $LOG_DIR/bot_console.log" "emergency"
+        return 1
     fi
 }
 
@@ -413,37 +428,13 @@ monitor_bot_health() {
         return $?
     fi
     
-    # Update heartbeat
+    # Heartbeat marks that the monitor itself is alive and saw the bot
+    # (the bot process does not write heartbeats; the old self-read check
+    #  computed ~0s every time and could never detect unresponsiveness)
     echo "$(date +%s)" > "$HEARTBEAT_FILE"
-    
-    # Check responsiveness
-    local last_heartbeat=$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo "0")
-    local current_time=$(date +%s)
-    local time_diff=$((current_time - last_heartbeat))
-    
-    if (( time_diff > 300 )); then  # 5 minutes without heartbeat
-        log_warning "⚠️ Bot appears unresponsive (last heartbeat: ${time_diff}s ago). Restarting..."
-        restart_bot
-    fi
     
     # Resource monitoring
     check_resources
-    
-    # 🔧 NEW: Check bot functionality
-    check_bot_functionality
-}
-
-# 🔧 NEW: Bot functionality check
-check_bot_functionality() {
-    local bot_pid=$(cat "$PID_FILE" 2>/dev/null)
-    if [[ -n "$bot_pid" ]]; then
-        # Check if bot process is consuming CPU (indicating it's working)
-        local cpu_usage=$(ps -p "$bot_pid" -o %cpu --no-headers 2>/dev/null | tr -d ' ' || echo "0")
-        
-        if [[ "$cpu_usage" == "0.0" ]] || [[ -z "$cpu_usage" ]]; then
-            log_warning "Bot process seems idle (CPU: ${cpu_usage}%)"
-        fi
-    fi
 }
 
 # 🔧 ENHANCED: Connection state tracking
@@ -623,12 +614,12 @@ case "${1:-}" in
         cleanup_system
         ;;
     enable-autostart)
-        log "Enabling auto-start..."
-        # Implementation for auto-start enable
+        log "Enabling auto-start (systemd user service)..."
+        systemctl --user enable "$SERVICE_NAME" && log "✅ Auto-start enabled"
         ;;
     disable-autostart)
-        log "Disabling auto-start..."
-        # Implementation for auto-start disable
+        log "Disabling auto-start (systemd user service)..."
+        systemctl --user disable "$SERVICE_NAME" && log "✅ Auto-start disabled"
         ;;
     logs)
         echo -e "${CYAN}📋 Live Logs (Ctrl+C to exit)${NC}"
