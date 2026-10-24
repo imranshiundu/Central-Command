@@ -1,0 +1,6 @@
+# Optional - install only for the features you want.
+# The bot loads fine without any of these and disables the matching features.
+
+openai>=1.30        # Amira AI assistant (/amira)
+opencv-python       # Webcam capture, recording, surveillance (/photo /record ...)
+cryptography        # File encryption (/encrypt_file /decrypt_file)

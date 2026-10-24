@@ -1,0 +1,37 @@
+# --- Runtime artifacts ---
+*.db
+*.db-journal
+*.sqlite3
+*.pid
+*.lock
+*.heartbeat
+*.status
+bot.pid
+
+# Logs & data generated at runtime
+bot/logs/
+bot/data/
+bot/downloads/
+bot/camera_captures/
+bot/secure_storage/
+bot/mega_backup/
+bot/backups/
+bot/bot/
+
+# Secrets - copy config.example.json to config.json and keep it local
+bot/config.json
+config.json
+config.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Tooling
+node_modules/
+.cache/
+.DS_Store

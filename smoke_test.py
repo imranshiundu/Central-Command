@@ -4,6 +4,11 @@ import sys, os, json, types, traceback
 
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bot'))
 
+# Fresh clone: config.json is gitignored; work from the example
+if not os.path.exists('config.json'):
+    import shutil
+    shutil.copy('config.example.json', 'config.json')
+
 with open('config.json') as f:
     config = json.load(f)
 
