@@ -54,18 +54,7 @@ def register_commands(register_func):
     commands = {
         'monitor_start': (monitor_start_command, "Start 24/7 security monitoring"),
         'monitor_stop': (monitor_stop_command, "Stop all security monitoring"),
-        'monitor_status': (monitor_status_command, "Check monitoring status"),
-        'intrusion_check': (intrusion_check_command, "Scan for system intrusions"),
-        'failed_logins': (failed_logins_command, "Check failed login attempts"),
-        'usb_alert': (usb_alert_command, "USB connection monitoring [on/off]"),
-        'bluetooth_alert': (bluetooth_alert_command, "Bluetooth monitoring [on/off]"),
-        'wrong_password_photo': (wrong_password_photo_command, "Capture failed logins [on/off]"),
-        'network_scan': (network_scan_command, "Scan network for devices"),
-        'process_scan': (process_scan_command, "Scan for suspicious processes"),
-        'port_scan': (port_scan_command, "Scan open ports on system"),
-        'file_integrity': (file_integrity_command, "Check system file integrity"),
-        'alert_history': (alert_history_command, "View security alert history"),
-        'monitor_config': (monitor_config_command, "Configure monitoring settings")
+        'monitor_status': (monitor_status_command, "Check monitoring status")
     }
     
     for cmd, (handler, description) in commands.items():

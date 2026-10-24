@@ -65,13 +65,7 @@ def register_commands(register_func):
         'webcam_control': (webcam_control_command, "Control webcam [on/off/stream/capture]"),
         'screenshot': (screenshot_command, "Capture screenshot [delay_seconds]"),
         'screen_record': (screen_record_command, "Record screen [duration_seconds]"),
-        'remote_shell': (remote_shell_command, "Execute remote shell command"),
-        'process_control': (process_control_command, "Control processes [list/kill/start]"),
-        'service_control': (service_control_command, "Control system services"),
-        'power_control': (power_control_command, "Power management [shutdown/reboot/sleep]"),
-        'clipboard_control': (clipboard_control_command, "Control clipboard [get/set/clear]"),
-        'audio_control': (audio_control_command, "Control audio [record/play/volume]"),
-        'network_control': (network_control_command, "Control network [status/disable/enable]"),
+        'remote_shell': (remote_shell_command, "Execute remote shell command [command]"),
         'offline_mode': (offline_mode_command, "Enable offline command queue [on/off]"),
         'offline_status': (offline_status_command, "Check offline command status"),
         'remote_status': (remote_status_command, "Check remote control status")
@@ -1478,3 +1472,33 @@ def cleanup():
 
 # Auto-initialize when module loads
 initialize_remote_system()
+async def remote_shell_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Execute a remote shell command and return its output."""
+    try:
+        if not context.args:
+            await update.message.reply_text(
+                "❌ **Usage:** `/remote_shell <command>`\n\n"
+                "**Examples:**\n"
+                "• `/remote_shell uptime`\n"
+                "• `/remote_shell ls -la /tmp`\n"
+                "• `/remote_shell df -h /`"
+            )
+            return
+
+        success, stdout, stderr = await safe_system_command(
+            context.args, timeout=30
+        )
+        output = (stdout or stderr or "(no output)").strip()
+        output = output[:3500]
+
+        status = "✅" if success else "❌"
+        await update.message.reply_text(
+            f"{status} **Remote shell**\n"
+            f"`$ {' '.join(context.args)}`\n\n"
+            f"```\n{output}\n```",
+            parse_mode='Markdown',
+        )
+    except Exception as e:
+        logger.error(f"Remote shell command error: {e}")
+        await update.message.reply_text(f"❌ Remote shell error: {e}")
+

@@ -1,4 +1,4 @@
 # Core requirements - the bot runs with just these
-python-telegram-bot>=21.0
+python-telegram-bot[job-queue]>=21.0
 psutil>=5.9
 requests>=2.31

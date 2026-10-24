@@ -55,15 +55,7 @@ def register_commands(register_func):
         'metadata_extract': (metadata_extract_command, "Extract file metadata [file_path]"),
         'timeline_analysis': (timeline_analysis_command, "Generate system activity timeline"),
         'clean_evidence': (clean_evidence_command, "Wipe digital evidence and traces"),
-        'logout_all': (logout_all_command, "Sign out all user accounts and sessions"),
-        'memory_dump': (memory_dump_command, "Capture system memory for analysis"),
-        'disk_forensics': (disk_forensics_command, "Perform disk-level forensic analysis"),
-        'user_activity': (user_activity_command, "Analyze user activity and behavior"),
-        'registry_analysis': (registry_analysis_command, "Analyze system registry (Windows)"),
-        'log_analysis': (log_analysis_command, "Analyze system and application logs"),
-        'hash_analysis': (hash_analysis_command, "Analyze file hashes for anomalies"),
-        'forensics_report': (forensics_report_command, "Generate comprehensive forensic report"),
-        'evidence_package': (evidence_package_command, "Create evidence package for export")
+        'logout_all': (logout_all_command, "Sign out all user accounts and sessions")
     }
     
     for cmd, (handler, description) in commands.items():

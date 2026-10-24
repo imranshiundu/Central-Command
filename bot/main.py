@@ -14,7 +14,7 @@ import subprocess
 import time
 from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, ContextTypes, JobQueue, MessageHandler, filters, CallbackQueryHandler
 from threading import Lock, Event
 import sqlite3
 import traceback
@@ -157,6 +157,15 @@ def register_command(name, handler, description="No description available"):
     }
     logger.info(f"Registered command: /{name}")
 
+
+def register_command_deduped(name, handler, description="No description available"):
+    """Register a command, skipping duplicates (first module wins)."""
+    if name in command_registry:
+        logger.debug(f"Skipping duplicate command /{name} (already registered)")
+        return
+    register_command(name, handler, description)
+
+
 # --- Offline Queue System ---
 def queue_offline_command(user_id, command, args):
     """Queue command for execution when back online."""
@@ -247,9 +256,9 @@ def load_modules():
             if module_name == 'amira' and hasattr(module, 'initialize'):
                 module.initialize(amira_key)
 
-            # Auto-register commands from module
+            # Auto-register commands from module (deduped, auth-wrapped later)
             if hasattr(module, 'register_commands'):
-                module.register_commands(register_command)
+                module.register_commands(register_command_deduped)
                 logger.info(f"Successfully loaded and registered module: {module_name}")
             else:
                 logger.warning(f"Module {module_name} has no register_commands function")
@@ -612,7 +621,7 @@ def main():
         logger.error('telegram_bot_token missing from config.json - cannot start')
         print('\u274c ERROR: Set telegram_bot_token in bot/config.json first.')
         sys.exit(1)
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(token).job_queue(JobQueue()).build()
 
     # Add callback handler for workspace controller inline buttons
     try:
@@ -628,9 +637,9 @@ def main():
     application.add_handler(CommandHandler("commands", commands_all))
     application.add_handler(CommandHandler("status", status))
 
-    # Register all dynamically loaded commands
+    # Register all dynamically loaded commands (all require authorization)
     for command_name, command_info in command_registry.items():
-        application.add_handler(CommandHandler(command_name, command_info['handler']))
+        application.add_handler(CommandHandler(command_name, require_auth(command_info['handler'])))
         logger.info(f"Added handler for command: /{command_name}")
 
     # Unknown command handler
