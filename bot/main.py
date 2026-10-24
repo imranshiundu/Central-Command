@@ -23,25 +23,15 @@ import psutil
 # --- Global stop event to prevent multiple instances ---
 bot_stop_event = Event()
 
-# --- Configuration Loading ---
+# --- Configuration Loading (shared with all modules) ---
 try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-except FileNotFoundError:
-    print("ERROR: config.json not found. Please create it from the template.")
-    sys.exit(1)
+    from modules.shared import config, BASE_DIR, DOWNLOADS_DIR, LOGS_DIR, ensure_dir
+except ImportError:  # direct script execution
+    from shared import config, BASE_DIR, DOWNLOADS_DIR, LOGS_DIR, ensure_dir
 
-# --- Path Setup ---
-BASE_DIR = config['paths']['base_dir']
-SCRIPTS_DIR = os.path.join(BASE_DIR, config['paths']['scripts_dir'])
-LOGS_DIR = os.path.join(BASE_DIR, config['paths']['logs_dir'])
-DOWNLOADS_DIR = os.path.join(BASE_DIR, config['paths']['downloads_dir'])
+SCRIPTS_DIR = os.path.join(BASE_DIR, config.get('paths', {}).get('scripts_dir', 'scripts'))
 DB_PATH = os.path.join(BASE_DIR, 'command_queue.db')
 PID_FILE = os.path.join(BASE_DIR, 'bot.pid')
-
-# Create necessary directories
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
-os.makedirs(LOGS_DIR, exist_ok=True)
 
 # --- Logging Setup ---
 log_file = os.path.join(LOGS_DIR, 'bot_activity.log')

@@ -15,16 +15,11 @@ from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackContext
 
-# Load config
 try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-except FileNotFoundError:
-    config = {}
-    logging.error("config.json not found")
+    from .shared import BASE_DIR, DOWNLOADS_DIR
+except ImportError:  # direct script execution
+    from shared import BASE_DIR, DOWNLOADS_DIR
 
-BASE_DIR = config.get('paths', {}).get('base_dir', '/home/imran/C3NTR@L-COMM@ND-V1.1')
-DOWNLOADS_DIR = os.path.join(BASE_DIR, config.get('paths', {}).get('downloads_dir', 'downloads'))
 MUSIC_DIR = "/home/imran/Music"
 VIDEO_DIR = "/home/imran/Videos"
 DOCUMENTS_DIR = "/home/imran/Documents"

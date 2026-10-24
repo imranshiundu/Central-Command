@@ -20,16 +20,11 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import ContextTypes
 
-# Load config
 try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-except FileNotFoundError:
-    config = {}
-    logging.error("config.json not found")
+    from .shared import BASE_DIR, LOGS_DIR
+except ImportError:  # direct script execution
+    from shared import BASE_DIR, LOGS_DIR
 
-BASE_DIR = config.get('paths', {}).get('base_dir', '/home/imran/C3NTR@L-COMM@ND-V1.3')
-LOGS_DIR = os.path.join(BASE_DIR, config.get('paths', {}).get('logs_dir', 'logs'))
 SECURE_DIR = os.path.join(BASE_DIR, 'secure_storage')
 USB_CACHE_DIR = os.path.join(SECURE_DIR, 'usb_analysis')
 

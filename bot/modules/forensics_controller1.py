@@ -30,7 +30,6 @@ import base64
 import glob
 from typing import Dict, List, Any, Optional
 
-# Load config
 try:
     with open('config.json', 'r') as f:
         config = json.load(f)

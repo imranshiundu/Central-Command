@@ -25,15 +25,11 @@ import threading
 import psutil
 import re
 
-# Load config
 try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-except FileNotFoundError:
-    config = {}
-    logging.error("config.json not found")
+    from .shared import BASE_DIR
+except ImportError:  # direct script execution
+    from shared import BASE_DIR
 
-BASE_DIR = config.get('paths', {}).get('base_dir', '/home/imran/snap/C3NTR@L-COMM@ND-V1.2')
 FORENSICS_DIR = os.path.join(BASE_DIR, 'bot', 'data', 'forensics')
 EVIDENCE_DIR = os.path.join(BASE_DIR, 'bot', 'data', 'evidence')
 SECURITY_DIR = os.path.join(BASE_DIR, 'security')

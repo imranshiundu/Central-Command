@@ -40,17 +40,12 @@ try:
 except ImportError:
     TELEGRAM_AVAILABLE = False
 
-# Load config
 try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-except FileNotFoundError:
-    config = {}
-    logging.error("config.json not found")
+    from .shared import BASE_DIR, LOGS_DIR, config
+except ImportError:  # direct script execution
+    from shared import BASE_DIR, LOGS_DIR, config
 
-BASE_DIR = config.get('paths', {}).get('base_dir', '/home/imran/C3NTR@L-COMM@ND-V1.1')
 SECURITY_DIR = os.path.join(BASE_DIR, 'security')
-LOGS_DIR = os.path.join(BASE_DIR, config.get('paths', {}).get('logs_dir', 'logs'))
 DB_PATH = os.path.join(BASE_DIR, 'security.db')
 
 # Create security directory

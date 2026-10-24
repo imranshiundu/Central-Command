@@ -3,7 +3,7 @@
   "admin_pin": "",
   "authorized_user_ids": [],
   "paths": {
-    "base_dir": "/home/file location",
+    "base_dir": "",
     "scripts_dir": "scripts",
     "logs_dir": "logs", 
     "downloads_dir": "downloads"
